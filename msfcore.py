@@ -63,15 +63,13 @@ class MsfClient(object):
         return self.call('db.services', kwargs)
 
     def call(self, query, opts):
+        self.lock.acquire()
         try:
             return self.rpc.call(query, opts)
         except MsfRpcError as e:
-            # special case where our auth token has expired
-            if "token" in str(e).lower():
-                self.rpc.sessionid = None
-                self.rpc.login(self.config.get("user"), self.config.get("password"))
-                return self.rpc.call(query, opts)
             raise MsfRpcError(str(e))
+        finally:
+            self.lock.release()
 
     def start_handler(self, lhost, lport, payload, exitonsession=False, auto_run=None):
         l = self.rpc.modules.use('exploit', 'multi/handler')

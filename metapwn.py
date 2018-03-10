@@ -1,12 +1,14 @@
 from msfcore import MsfClient
 from watchdog.observers import Observer
 from watchdog.events import PatternMatchingEventHandler
-import configparser
 from threading import Thread, Event
+from collections import defaultdict
+import configparser
 import sys
 import time
 import os
 import logging as log
+import re
 # TODO: make log level configurable in cfg file
 log.basicConfig(level=log.DEBUG)
 
@@ -34,6 +36,7 @@ class MModule(object):
         self.thread = StoppableThread(target=self.main)
         self.thread.daemon = True
         self.client = client
+        self.dynamic_opts = defaultdict(lambda: None)
         log.debug("Running module init for " + cfg["general"]["module"])
         if cfg:
             if cfg.has_option("general", "name"):
@@ -42,12 +45,26 @@ class MModule(object):
 
     def _set_options(self, module):
         for o, v in self.cfg["options"].items():
-            # set it if it exists to pymetasploit, otherwise set it as an extra opt
-            opt = [i for i in module.options if i.lower() == o.lower()]
-            if any(opt):
-                module[opt[0]] = v
-            else:
-                module._runopts[o] = v
+            self._set_option(module, o, v)
+
+    def _set_option(self, module, key, value):
+        # set it if it exists to pymetasploit, otherwise set it as an extra opt
+        val = self._parse_value(value)
+        log.debug("Setting {} to {}".format(key, val))
+        opt = [i for i in module.options if i.lower() == key.lower()]
+        if any(opt):
+            module[opt[0]] = val
+        else:
+            module._runopts[key] = val
+
+    def _parse_value(self, value):
+        for m in re.finditer(r"(%(\S+?)%)", value):
+            value = value.replace(m.group(1), str(self.dynamic_opts.get(m.group(2), m.group(1))))
+        func = re.match(r"^@(.*)@$", value)
+        if func:
+            # yeah I used eval. whatever man
+            value = eval(func.group(1))()
+        return value
 
     def _run(self):
         try:
@@ -79,6 +96,21 @@ class MModule(object):
     def stopped(self):
         return self.thread.stopped
 
+    def get_cfg_option(self, section, option, default):
+        if self.cfg.has_section(section) and self.cfg.has_option(section, option):
+            return self.cfg[section][option]
+        return default
+
+    def get_cfg_bool(self, section, option, default):
+        if self.cfg.has_section(section) and self.cfg.has_option(section, option):
+            return self.cfg.getbool(section, option)
+        return bool(default)
+
+    def get_cfg_int(self, section, option, default):
+        if self.cfg.has_section(section) and self.cfg.has_option(section, option):
+            return self.cfg.getint(section, option)
+        return int(default)
+
     def main(self):
         pass
 
@@ -89,7 +121,22 @@ class SingleModule(MModule):
 
 
 class ServiceModule(MModule):
-    pass
+    def main(self):
+        interval = self.get_cfg_int("general", "interval", 5)
+        proto = self.get_cfg_option("service", "protocol", "tcp")
+        ports = self.cfg.get("service", "ports")
+        svcs = self.get_services(proto, ports, True)
+        while not self.stopped:
+            self.sleep_for(interval)
+            oldsvcs = svcs
+            svcs = self.get_services(proto, ports, True)
+            for svc in (svcs - oldsvcs):
+                self.dynamic_opts["HOST"] = svc[0].decode()
+                self.dynamic_opts["PORT"] = svc[1]
+                self._run()
+
+    def get_services(self, proto, ports, only_up):
+        return set([(x[b'host'], x[b'port']) for x in self.client.db_services(ports=ports, protocol=proto, only_up=True)['services']])
 
 
 class IntervalModule(MModule):
@@ -97,6 +144,7 @@ class IntervalModule(MModule):
         while not self.stopped:
             self._run()
             self.sleep_for(self.cfg.getint("general", "interval"))
+
 
 class ModuleManager(object):
     typemap = {"single": SingleModule,
@@ -189,5 +237,4 @@ class ModuleManager(object):
 if __name__ == "__main__":
     ms = ModuleManager(sys.argv[2], sys.argv[1])
     while 1:
-        print(ms.modules)
         time.sleep(5)

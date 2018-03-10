@@ -1,0 +1,12 @@
+[general]
+module=auxiliary/scanner/ssh/ssh_login
+type=service
+
+[service]
+ports=22,2222
+
+[options]
+PASSWORD=test123!@#!@#
+USERNAME=test123
+RPORT=%%PORT%%
+RHOSTS=%%HOST%%

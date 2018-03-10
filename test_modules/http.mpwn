@@ -1,0 +1,12 @@
+[general]
+module=auxiliary/scanner/http/http_version
+type=service
+
+[service]
+ports=80,443
+
+[options]
+RPORT=%%PORT%%
+RHOSTS=%%HOST%%
+VHOST=finishyour.beer
+SSL=@lambda: %%PORT%%==443@

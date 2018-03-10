@@ -1,0 +1,12 @@
+[general]
+module=exploit/windows/smb/psexec
+type=service
+
+[service]
+ports=445
+
+[options]
+PASSWORD=Chiapet1!
+USERNAME=Administrator
+RPORT=%%PORT%%
+RHOST=%%HOST%%
