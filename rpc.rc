@@ -1,1 +1,1 @@
-load msgrpc Pass=msf3 User=msf3 SSL=true ServerPort=55553
+load msgrpc Pass=msf User=msf SSL=true ServerPort=55553
