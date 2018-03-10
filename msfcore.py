@@ -21,6 +21,12 @@ class MsfClient(object):
         self.config.read(config)
         self._rpc_connect()
         self.lock = Lock()
+        if self.config.has_section("globals"):
+            for g, v in self.config["globals"].items():
+                if v:
+                    self.rpc.core.setg(g, v)
+                else:
+                    self.rpc.core.unsetg(g)
         if self.config.has_section("database"):
             if self.config.has_option("database", "yml") and self.config.has_option("database", "yml_config"):
                 with open(self.config.get("database", "yml")) as f:
