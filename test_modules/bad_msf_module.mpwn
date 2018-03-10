@@ -1,0 +1,4 @@
+[general]
+module=exploit/invalid/module
+name=bad_module
+type=single

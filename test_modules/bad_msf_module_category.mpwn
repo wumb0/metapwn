@@ -1,0 +1,4 @@
+[general]
+module=this/is/a/bad/category
+type=single
+name=bad_module_category

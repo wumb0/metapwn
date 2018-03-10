@@ -1,0 +1,9 @@
+[general]
+module=auxiliary/scanner/ssh/ssh_login
+type=interval
+interval=5
+
+[options]
+PASSWORD=test
+USERNAME=test
+RHOSTS=10.0.0.1

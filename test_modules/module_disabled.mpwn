@@ -1,0 +1,4 @@
+[general]
+module=auxiliary/scanner/ssh/ssh_login
+type=single
+disabled=yes
