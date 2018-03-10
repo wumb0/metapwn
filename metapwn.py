@@ -3,6 +3,7 @@ from watchdog.observers import Observer
 from watchdog.events import PatternMatchingEventHandler
 from threading import Thread, Event
 from collections import defaultdict
+from datetime import datetime, timedelta
 import configparser
 import sys
 import time
@@ -155,6 +156,7 @@ class ModuleManager(object):
         self.client = MsfClient(config)
         self.modules = {}
         self.path = path
+        self.last_modify_fire = datetime.now()
         self.read_initial()
 
         self.eventhandler = PatternMatchingEventHandler(patterns=["*.mpwn"], ignore_directories=True)
@@ -178,6 +180,7 @@ class ModuleManager(object):
     def dispatch(self, event):
         try:
             self._dispatch(event)
+            log.debug("Dispatched {} event".format(event.event_type))
         except Exception as e:
             log.error("Excpetion in event dispatcher ({}): {}".format(event.event_type, repr(e)))
 
@@ -187,9 +190,14 @@ class ModuleManager(object):
             self.create(event.src_path)
 
     def on_modified(self, event):
+        # Fixes issue #8
+        if datetime.now() - self.last_modify_fire < timedelta(seconds=1):
+            log.debug("Modified too quickly")
+            return
         if event.src_path in self.modules.keys():
             self.on_deleted(event)
         self.create(event.src_path)
+        self.last_modify_fire = datetime.now()
 
     def on_deleted(self, event):
         log.debug("Deleting " + event.src_path)
