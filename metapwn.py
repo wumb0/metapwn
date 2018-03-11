@@ -97,21 +97,6 @@ class MModule(object):
     def stopped(self):
         return self.thread.stopped
 
-    def get_cfg_option(self, section, option, default):
-        if self.cfg.has_section(section) and self.cfg.has_option(section, option):
-            return self.cfg[section][option]
-        return default
-
-    def get_cfg_bool(self, section, option, default):
-        if self.cfg.has_section(section) and self.cfg.has_option(section, option):
-            return self.cfg.getbool(section, option)
-        return bool(default)
-
-    def get_cfg_int(self, section, option, default):
-        if self.cfg.has_section(section) and self.cfg.has_option(section, option):
-            return self.cfg.getint(section, option)
-        return int(default)
-
     def main(self):
         pass
 
@@ -123,8 +108,8 @@ class SingleModule(MModule):
 
 class ServiceModule(MModule):
     def main(self):
-        interval = self.get_cfg_int("general", "interval", 5)
-        proto = self.get_cfg_option("service", "protocol", "tcp")
+        interval = self.cfg['general'].getint("interval", 5)
+        proto = self.cfg["service"].get("protocol", "tcp")
         ports = self.cfg.get("service", "ports")
         svcs = self.get_services(proto, ports, True)
         while not self.stopped:
@@ -142,6 +127,7 @@ class ServiceModule(MModule):
 
 class IntervalModule(MModule):
     def main(self):
+        jitter =
         while not self.stopped:
             self._run()
             self.sleep_for(self.cfg.getint("general", "interval"))
