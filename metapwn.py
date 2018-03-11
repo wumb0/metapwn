@@ -39,7 +39,6 @@ class MModule(object):
         self.thread.daemon = True
         self.client = client
         self.dynamic_opts = defaultdict(lambda: None)
-        log.debug("Running module init for " + cfg["general"]["module"])
         if cfg:
             if cfg.has_option("general", "name"):
                 self.thread.name = cfg["general"]["name"]
@@ -102,6 +101,21 @@ class MModule(object):
         pass
 
 
+class GlobalModule(MModule):
+    def main(self):
+        if self.cfg.has_section("globals"):
+            try:
+                self.client.lock.acquire()
+                for g, v in self.cfg["globals"].items():
+                    log.debug("setting " + g)
+                    if v:
+                        self.client.rpc.core.setg(g, v)
+                    else:
+                        self.client.rpc.core.unsetg(g)
+            finally:
+                self.client.lock.release()
+
+
 class SingleModule(MModule):
     def main(self):
         self._run()
@@ -138,7 +152,8 @@ class IntervalModule(MModule):
 class ModuleManager(object):
     typemap = {"single": SingleModule,
                "service": ServiceModule,
-               "interval": IntervalModule}
+               "interval": IntervalModule,
+               "global": GlobalModule}
 
     def __init__(self, path, config):
         self.client = MsfClient(config)
@@ -206,6 +221,10 @@ class ModuleManager(object):
             log.warning("Module '{}' is disabled".format(path))
             return
         mtype = cfg["general"]["type"]
+        if mtype == "global":
+            global_list = [i for i in self.modules.values() if isinstance(i, self.typemap[mtype])]
+            if any(global_list):
+                raise Exception("There is already a global module!")
         if mtype in self.typemap.keys():
             module = self.typemap[mtype](self.client, cfg)
             module.start()
