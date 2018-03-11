@@ -72,7 +72,7 @@ class MModule(object):
             self.client.lock.acquire()
             module = self.client.rpc.modules.use(*(self._get_modpath()))
             self._set_options(module)
-            job = module.execute()['job_id']
+            job = module.execute()[b'job_id']
         finally:
             self.client.lock.release()
         if job is not None:
@@ -137,7 +137,7 @@ class ServiceModule(MModule):
                 self._run()
 
     def get_services(self, proto, ports, only_up):
-        return set([(x[b'host'], x[b'port']) for x in self.client.db_services(ports=ports, protocol=proto, only_up=True)['services']])
+        return set([(x[b'host'], x[b'port']) for x in self.client.db_services(ports=ports, protocol=proto, only_up=only_up)[b'services']])
 
 
 class IntervalModule(MModule):
