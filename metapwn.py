@@ -4,6 +4,7 @@ from watchdog.events import PatternMatchingEventHandler
 from threading import Thread, Event
 from collections import defaultdict
 from datetime import datetime, timedelta
+from random import uniform
 import configparser
 import sys
 import time
@@ -127,10 +128,11 @@ class ServiceModule(MModule):
 
 class IntervalModule(MModule):
     def main(self):
-        jitter =
+        jitter = self.cfg["general"].getfloat("jitter", 0)
+        interval = self.cfg.getint("general", "interval")
         while not self.stopped:
             self._run()
-            self.sleep_for(self.cfg.getint("general", "interval"))
+            self.sleep_for(interval + (interval * uniform(-jitter, jitter)))
 
 
 class ModuleManager(object):

@@ -2,6 +2,7 @@
 module=auxiliary/scanner/ssh/ssh_login
 type=interval
 interval=5
+jitter=.2
 
 [options]
 PASSWORD=test
