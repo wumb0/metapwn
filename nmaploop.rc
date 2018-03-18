@@ -1,0 +1,6 @@
+<ruby>
+loop do
+  run_single("db_nmap --max-parallelism=30 -Pn -p445 -n 192.168.21-28.1-40");
+  sleep(30)
+end
+</ruby>
