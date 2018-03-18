@@ -4,6 +4,7 @@ from watchdog.events import PatternMatchingEventHandler
 from threading import Thread, Event
 from collections import defaultdict
 from datetime import datetime, timedelta
+from functools import partial
 from random import uniform
 import configparser
 import sys
@@ -13,6 +14,8 @@ import logging as log
 import re
 # TODO: make log level configurable in cfg file
 log.basicConfig(level=log.DEBUG)
+
+pbytes = partial(bytes, encoding="utf8")
 
 
 class StoppableThread(Thread):
@@ -38,6 +41,7 @@ class MModule(object):
         self.thread = StoppableThread(target=self.main)
         self.thread.daemon = True
         self.client = client
+        self.jobid = None
         self.dynamic_opts = defaultdict(lambda: None)
         if cfg:
             if cfg.has_option("general", "name"):
@@ -48,9 +52,10 @@ class MModule(object):
         for o, v in self.cfg["options"].items():
             self._set_option(module, o, v)
 
-    def _set_option(self, module, key, value):
+    def _set_option(self, module, key, val):
         # set it if it exists to pymetasploit, otherwise set it as an extra opt
-        val = self._parse_value(value)
+        val = self._parse_value(val)
+        key = pbytes(key)
         log.debug("Setting {} to {}".format(key, val))
         opt = [i for i in module.options if i.lower() == key.lower()]
         if any(opt):
@@ -59,29 +64,42 @@ class MModule(object):
             module._runopts[key] = val
 
     def _parse_value(self, value):
+        if value in self.cfg.BOOLEAN_STATES:
+            return self.cfg.BOOLEAN_STATES[value]
         for m in re.finditer(r"(%(\S+?)%)", value):
             value = value.replace(m.group(1), str(self.dynamic_opts.get(m.group(2), m.group(1))))
         func = re.match(r"^@(.*)@$", value)
         if func:
             # yeah I used eval. whatever man
             value = eval(func.group(1))()
-        return value
+        return pbytes(value)
 
     def _run(self):
         try:
             self.client.lock.acquire()
             module = self.client.rpc.modules.use(*(self._get_modpath()))
             self._set_options(module)
-            job = module.execute()[b'job_id']
+            job = module.execute()
         finally:
             self.client.lock.release()
-        if job is not None:
+        if job[b'job_id'] is not None:
+            self.jobid = job[b'job_id']
             log.debug("Started job {}".format(job))
 
     def _get_modpath(self):
         # splits module into type and path
         sp = self.cfg["general"]["module"].split("/")
         return (sp[0], "/".join(sp[1:]))
+
+    def wait_for_job(self):
+        while self.jobid:
+            try:
+                self.client.lock.acquire()
+                self.client.rpc.jobs.info(self.jobid)
+            except:
+                self.jobid = None
+            finally:
+                self.client.lock.release()
 
     def start(self):
         self.thread.start()
@@ -123,18 +141,34 @@ class SingleModule(MModule):
 
 class ServiceModule(MModule):
     def main(self):
+        svcs = set()
+        exclude_port = None
+        exclude_host = None
         interval = self.cfg['general'].getint("interval", 5)
         proto = self.cfg["service"].get("protocol", "tcp")
         ports = self.cfg.get("service", "ports")
-        svcs = self.get_services(proto, ports, True)
+        new_only = self.cfg["service"].getboolean("new_only", True)
+        if self.cfg.has_section("limits"):
+            exclude_port = set([int(i) for i in self.cfg["limits"].get("ports", "").split(",") if i])
+            exclude_host = set(self.cfg["limits"].get("hosts", "").split(","))
+            if exclude_port == {''}:
+                exclude_port = None
+            if exclude_host == {''}:
+                exclude_host = None
+        if new_only:
+            svcs = self.get_services(proto, ports, True)
         while not self.stopped:
-            self.sleep_for(interval)
             oldsvcs = svcs
             svcs = self.get_services(proto, ports, True)
             for svc in (svcs - oldsvcs):
+                if exclude_host and svc[0].decode() in exclude_host:
+                    continue
+                if exclude_port and svc[1] in exclude_port:
+                    continue
                 self.dynamic_opts["HOST"] = svc[0].decode()
                 self.dynamic_opts["PORT"] = svc[1]
                 self._run()
+            self.sleep_for(interval)
 
     def get_services(self, proto, ports, only_up):
         return set([(x[b'host'], x[b'port']) for x in self.client.db_services(ports=ports, protocol=proto, only_up=only_up)[b'services']])
@@ -146,6 +180,7 @@ class IntervalModule(MModule):
         interval = self.cfg.getint("general", "interval")
         while not self.stopped:
             self._run()
+            self.wait_for_job()
             self.sleep_for(interval + (interval * uniform(-jitter, jitter)))
 
 
@@ -242,7 +277,7 @@ class ModuleManager(object):
 
     @staticmethod
     def read_module(path):
-        parser = configparser.ConfigParser()
+        parser = configparser.ConfigParser(delimiters=("="))
         # make keys case sensitive
         parser.optionxform = str
         parser.read(path)
